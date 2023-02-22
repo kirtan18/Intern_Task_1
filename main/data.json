@@ -1,0 +1,32 @@
+[
+    {
+        "name": "kirtanPrajapati",
+        "email": "kirtan2@gmail.com",
+        "age": 21,
+        "contact": 1234867567,
+        "gender": "female",
+        "skills": [
+            "x",
+            "y",
+            "z"
+        ],
+        "birthdate": "2023-02-05",
+        "city": "ahmd",
+        "id": 9
+    },
+    {
+        "name": "user1",
+        "email": "user1@gmail.com",
+        "age": 25,
+        "contact": 11,
+        "gender": "female",
+        "skills": [
+            "a",
+            "b",
+            "k"
+        ],
+        "birthdate": "2023-02-11",
+        "city": "ahmd",
+        "id": 1
+    }
+]
