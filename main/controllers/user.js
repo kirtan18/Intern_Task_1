@@ -1,233 +1,242 @@
-const allUser = require('../data.json');
-const fs = require("fs");
-const jwt = require("jsonwebtoken");
+const Pool = require('pg').Pool;
 
-//! Create Token for authentication
-const createToken = (req,res) => {
-    jwt.sign({ msg: "Grant Access." }, "secretkey", (err, token) => {
-        res.status(200).json({
-          msg: "Welcome... !!",
-          token
-        });
-      });
-};
+const pool = new Pool({
+    user: 'postgres',
+    host: 'localhost',
+    database: 'person',
+    password: '12345',
+    port: 5432
+});
 
-
-//! Post API || Create user API that should add new user object in the JSON file 
-const createPerson =(req , res) => {
+const getUsers = async (req, res) => {
     try {
-        const id = allUser.length + 1;
-        req.body.id = id;
-        const lowerName = req.body.name.toLowerCase()
-        const lowerEmail = req.body.email.toLowerCase();
-        const found = allUser.find(user => user.email == lowerEmail);
-
-        if (found) {
-            res.status(404).send("Email already used");
-        }
-        req.body.name = lowerName;
-        req.body.email = lowerEmail;
-        allUser.push(req.body);
-        var strNotes = JSON.stringify(allUser);
-        fs.writeFile('data.json', strNotes, (err) => {
-            if (err) return console.log(err);
-            console.log('Note added');
-        });
-        res.send(req.body);
+        const result = await pool.query("SELECT user_id, name, email, age, contact, gender, birthdate, city FROM users ORDER BY user_id ASC");
+        res.json(result.rows);
     } catch (error) {
         console.error(err);
+        res.status(500).send('Internal server error');
     }
 };
 
-
-//!Sort Data || Get list of users from the JSON file with the ability to sort users by their name, email and age 
-function sortByProperty(property) {
-    return function (a, b) {
-        if (a[property].toLowerCase() > b[property].toLowerCase())
-            return 1;
-        else if (a[property].toLowerCase() < b[property].toLowerCase())
-            return -1;
-        return 0;
-    }
-};
-
-
-function sortByPropertyforAge(property) {
-    return function (a, b) {
-        if (a[property] > b[property])
-            return 1;
-        else if (a[property] < b[property])
-            return -1;
-        return 0;
-    }
-};
-
-const sortUser = (req,res) =>{
+const getSkills = async (req, res) => {
     try {
-        let queryType = req.query.sortString;
-        if (!queryType) {
-            const allData = JSON.stringify(allUser);
-            res.send(allData);
-        }
-        let sortedData;
-        if (queryType == "name" || queryType == "email") {
-            sortedData = allUser.sort(sortByProperty(queryType));
-        }
-        sortedData = allUser.sort(sortByPropertyforAge(queryType));
-        res.send(sortedData);
+        const result = await pool.query("SELECT skill_id, skill_name FROM skills ORDER BY skill_id ASC");
+        res.json(result.rows);
+    } catch (error) {
+        console.log(error);
+        res.status(500).send('Internal server error');
+    }
+}
+
+// TODO: Without array_agg function 
+const userWithSkill = async (req, res) => {
+    try {
+        const result = await pool.query("SELECT U.name, U.email, U.age, U.contact, U.gender, U.birthdate, U.city, ARRAY_AGG(S.skill_name) AS skills FROM users U JOIN userSkills US ON U.user_id = US.user_id JOIN skills S ON US.skill_id = S.skill_id GROUP BY U.user_id,U.name, U.email, U.age, U.contact, U.gender, U.birthdate, U.city");
+        res.json(result.rows);
+    } catch (error) {
+        console.log(error);
+        res.status(500).send('Internal server error');
+    }
+}
+
+//! Post API || Create user API that should add new user object in the JSON file
+
+const createPerson = async (req, res) => {
+    try {
+        const { name, email, age, contact, gender, birthdate, city, skillId } = req.body;
+        const queryParams = [];
+
+        const userResult = await pool.query(
+            'INSERT INTO users(name,email,age,contact,gender,birthdate,city)VALUES(LOWER($1),LOWER($2),$3,$4,$5,$6,$7) RETURNING user_id', [name, email, age, contact, gender, birthdate, city]);
+        const userId = userResult.rows[0].user_id;
+
+        // Create userSkills Table
+        let query = `INSERT INTO userSkills(user_id,skill_id) VALUES`;
+
+        skillId.forEach((id, i) => {
+            queryParams.push(`(${userId}, $${++i})`);
+        })
+
+        query = `${query} ${queryParams.join(', ')}`;
+
+        console.log(query);
+
+        const result = await pool.query(query, skillId);
+
+        res.status(201).json("User Added");
+    }
+    catch (error) {
+        console.log(error);
+        res.status(500).send('Internal server error');
+    }
+};
+
+// //!Sort Data || Get list of users from the JSON file with the ability to sort users by their name, email and age 
+
+const sortUser = async (req, res) => {
+    try {
+        const sortField = req.query.sortField;
+        const sortOrder = req.query.sortOrder;
+
+        const query = `SELECT  name, email, age, contact, gender, birthdate, city FROM users ORDER BY  
+                       ${sortField} ${sortOrder} `;
+
+        const result = await pool.query(query);
+        res.json(result.rows);
     }
     catch (err) {
         console.error(err);
+        res.status(500).send('Internal server error');
     }
 };
 
-//! Search API || Search user(s) by name and email 
-const searchUserByNameAndemail = (req,res) => {
+// //! Search API || Search user(s) by name and email 
+const searchUserByNameAndemail = async (req, res) => {
     try {
-        const searchName = req.query.name.toLowerCase();
-        const searchEmail = req.query.email.toLowerCase();
+        let name = req.query.name;
+        let email = req.query.email;
 
-        const allData =  allUser.filter((user) => {
-            return (user.name.includes(searchName) && user.email.includes(searchEmail));
-        });
-        res.send(allData);
-    } catch (error) {
-        console.error(err);
+        if (name) name = name.toLowerCase();
+        if (email) email = email.toLowerCase();
+
+        let query = `SELECT name, email, age, contact, gender, birthdate, city FROM users WHERE name LIKE '${name}' OR email LIKE '${email}'`;
+
+        const result = await pool.query(query);
+        res.json(result.rows);
     }
-};
-
-
-//! Get users whose birthday is coming in next seven days' excluding today 
-const birthdayUsers = (req,res) => {
-    try {
-        const birthData = [];
-        const current = new Date();
-        let nextSeventhDate = new Date();
-        nextSeventhDate.setDate(nextSeventhDate.getDate() + 7);
-        allUser.forEach((user) => {
-            const birthDate = new Date(user.birthdate);
-            if (birthDate > current && birthDate <= nextSeventhDate) {
-                birthData.push(user);
-            }
-        });
-        if(birthData.length == 0){
-            res.status(404).send("No one have birthday in next coming seven days");
-        }
-        res.send(birthData);
-    } catch (error) {
-        console.error(err);
+    catch (error) {
+        console.error(error);
     }
 };
 
 
-//! Update User data by ID || API to Update user by id that should update user details in the JSON file 
-
-const updateUserById = (req,res) => {
+// //! Get users whose birthday is coming in next seven days' excluding today 
+const birthdayUsers = async (req, res) => {
     try {
-        const paramID = req.params.id;
-        const found = allUser.find(u => u.id === parseInt(paramID));
-        if (!found) {
-            res.status(404).send("ID is not found");
-        }
-        for (let key in req.body) {
-            found[key] = req.body[key];
-        }
 
-        const updatedData = JSON.stringify(allUser);
+        let query = `SELECT * FROM users WHERE EXTRACT(month from birthdate) BETWEEN EXTRACT(month from now()) AND EXTRACT(month from now() + interval '7 days') AND EXTRACT(day from birthdate) BETWEEN EXTRACT(day from now() + interval '1 days') AND EXTRACT(day from now() + interval '7 days');`;
 
-        fs.writeFile('data.json', updatedData, (err) => {
-            if (err) console.log(err);
-            res.send(found);
-        });
+        const result = await pool.query(query);
+        res.json(result.rows);
     } catch (error) {
-        console.error(err);
+        console.error(error);
+    }
+};
+
+
+// //! Update User data by ID || API to Update user by id that should update user details in the JSON file 
+
+const updateUserById = async (req, res) => {
+    try {
+        const id = req.params.id;
+        let query = `UPDATE users SET`;
+
+        let keys = Object.keys(req.body);
+        const arr = [];
+        const queryParams = [];
+
+        keys.forEach((key, i) => {
+            queryParams.push(`${key} = $${++i}`)
+            arr.push(req.body[key])
+        });
+
+        query = `${query} ${queryParams.join(', ')} WHERE id = $${queryParams.length + 1}`;
+        arr.push(id);
+
+        const result = await pool.query(query, arr);
+        res.json("Data successfully updated");
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Internal Server Error' });
     }
 };
 
 
 //! Get users by matching skills 
-const getUserByMatchSkill = (req,res) => {
+const getUserByMatchSkill = async (req, res) => {
     try {
-        const arr =  req.query.matchSkill.split(',');
-        console.log(arr);
-       
-        const  matchingData = [];
-        allUser.forEach((user) =>{
-            arr.forEach((a) =>{
-                const index = user.skills.indexOf(a);
-                if(index != -1){
-                    matchingData.push(user);
-                }
-            })
-        });
-        res.send(matchingData);
+        const skill = req.query.skill;
+
+        const query = `SELECT U.name, U.email, U.age, U.contact, U.gender, U.birthdate, U.city, ARRAY_AGG(S.skill_name) AS skills FROM users U JOIN userSkills US ON U.user_id = US.user_id JOIN skills S ON US.skill_id = S.skill_id WHERE S.skill_name = $1 GROUP BY U.user_id,U.name, U.email, U.age, U.contact, U.gender, U.birthdate, U.city `;
+
+        const result = await pool.query(query, [skill]);
+
+        res.json(result.rows);
+
     } catch (error) {
-        console.error(err);
+        console.error(error);
+        res.status(500).json({ error: 'Internal Server Error' });
     }
 };
 
 
 //! API to add skill(s) for particular user 
-const addSkillInUserById = (req,res) => {
+const addSkillInUserById = async (req, res) => {
     try {
-        const found = allUser.find(u => u.id === parseInt(req.params.id));
-        if (!found) {
-            res.status(404).send("User Not Found");
+        const userId = req.params.id;
+        const newSkillsID = req.body.skillIds;
+        const queryParams = [];
+
+        const check = await pool.query(`SELECT * FROM userSkills WHERE skill_id = ANY($1) AND user_id = $2`, [newSkillsID, userId]);
+
+        console.log(check.rows);
+        if (check.rows[0] != undefined) {
+            res.json("This ID is already present in database");
         }
-        req.body.skills.forEach((skill) => {
-            const findSkill = found.skills.find(fn => fn === skill);
-            if (!findSkill) {
-                found.skills.push(skill);
-            }
-        });
-        const updatedData = JSON.stringify(allUser);
-        fs.writeFile('data.json', updatedData, (err) => {
-            if (err) console.log(err);
-            console.log("Skills Added");
-            res.send(found);
-        });
+        else {
+            let query = `INSERT INTO userSkills(user_id,skill_id) VALUES`;
+
+            newSkillsID.forEach((id, i) => {
+                queryParams.push(`(${userId}, $${++i})`);
+            });
+
+            query = `${query} ${queryParams.join(', ')}`;
+
+            const result = await pool.query(query, newSkillsID);
+
+            res.json("New Skills added");
+        }
     }
-    catch {
-        console.error(err);
+    catch (err) {
+        res.status(500).json({ error: 'Internal Server Error' });
     }
 };
 
 
 //! API to remove skill(s) for particular user 
-const removeSkillInUserById = (req,res) => {
+const removeSkillInUserById = async (req, res) => {
     try {
-        const found = allUser.find(u => u.id === parseInt(req.params.id));
-        if (!found) {
-            res.status(404).send("User Not Found");
+        const userId = req.params.id;
+        const removeSkillsID = req.body.skillIds;
+
+        const check = await pool.query(`SELECT * FROM userSkills WHERE skill_id = ANY($1) AND user_id = $2`, [removeSkillsID, userId]);
+
+        console.log(check.rows.length);
+
+        if (check.rows.length != removeSkillsID.length) {
+            res.json("Id is not available in userSkills");
         }
+        else {
+            const result = await pool.query(`DELETE FROM userSkills WHERE skill_id = ANY($1) AND user_id = $2`, [removeSkillsID, userId]);
 
-        req.body.skills.forEach((skill) =>{
-            const index = found.skills.indexOf(skill);
-            if(index != -1){
-                found.skills.splice(index,1);
-            }
-            res.status(400).send("skill was already not available"); 
-        })
-
-        const updatedData = JSON.stringify(allUser);
-        fs.writeFile('data.json', updatedData, (err) => {
-            if (err) console.log(err);
-            res.send(found);
-        });
-
+            res.json("User Deleted from Database");
+        }
     } catch (error) {
-        console.error(err);
+        res.status(500).json(error);
     }
 }
 
 module.exports = {
     createPerson,
+    getUsers,
+    getSkills,
+    userWithSkill,
     sortUser,
     searchUserByNameAndemail,
     birthdayUsers,
     updateUserById,
     getUserByMatchSkill,
     addSkillInUserById,
-    removeSkillInUserById,
-    createToken
+    removeSkillInUserById
+    // createToken
 };

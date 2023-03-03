@@ -62,7 +62,6 @@ app.use((err, req, res, next) => {
 
 
 
-
 // //! Post API || Create user API that should add new user object in the JSON file 
 // app.post('/person', validate(userSchema), (req, res) => {
 //     try {
