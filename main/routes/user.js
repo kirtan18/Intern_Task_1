@@ -3,7 +3,6 @@ const router = express.Router();
 const { userSchema, sortSchema, updateSchema, searchSchema, addSkillSchema, removeSkillSchema, matchSchema } = require('../models/schema');
 const validate = require('../utils/validationHelper')
 const users = require('../controllers/user');
-// const auth  = require('../authentication/auth');
 
 
 router.get( '/users' , users.getUsers);
