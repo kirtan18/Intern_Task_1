@@ -57,7 +57,7 @@ removeSkillSchema:{
 },
 matchSchema:{
     query: Joi.object({
-        skill: Joi.string()
+        skills: Joi.string()
     })
 }
 };
