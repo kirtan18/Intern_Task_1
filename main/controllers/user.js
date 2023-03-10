@@ -13,8 +13,8 @@ const getUsers = async (req, res) => {
         const result = await pool.query("SELECT user_id, name, email, age, contact, gender, birthdate, city FROM users ORDER BY user_id ASC");
         res.json(result.rows);
     } catch (error) {
-        console.error(err);
-        res.status(500).send('Internal server error');
+        console.error(error);
+        res.status(500).json({ error: 'Internal Server Error' });
     }
 };
 
@@ -23,20 +23,48 @@ const getSkills = async (req, res) => {
         const result = await pool.query("SELECT skill_id, skill_name FROM skills ORDER BY skill_id ASC");
         res.json(result.rows);
     } catch (error) {
-        console.log(error);
-        res.status(500).send('Internal server error');
+        console.error(error);
+        res.status(500).json({ error: 'Internal Server Error' });
     }
 }
 
-// TODO: Without array_agg function 
-const userWithSkill = async (req, res) => {
+const userWithSkills = async (req, res) => {
     try {
-        const result = await pool.query("SELECT U.name, U.email, U.age, U.contact, U.gender, U.birthdate, U.city, ARRAY(SELECT S.skill_name FROM userSkills US JOIN skills S ON US.skill_id = S.skill_id WHERE US.user_id = U.user_id) AS skills FROM users U");
-        res.json(result.rows);
+        const result = await pool.query('SELECT U.user_id, U.name, U.email, U.age, U.contact, U.gender, U.birthdate, U.city, S.skill_id, S.skill_name FROM users U JOIN userSkills US ON U.user_id = US.user_id  JOIN skills S ON US.skill_id = S.skill_id order by U.user_id');
 
+        const temp = [];
+
+        result.rows.forEach((rows) => {
+
+            const userExistance = temp.find(user => user.user_id == rows.user_id)
+
+            if (userExistance) {
+                userExistance.skills.push({
+                    id: rows.skill_id,
+                    name: rows.skill_name
+                })
+            } else {
+                temp.push({
+                    id: rows.user_id,
+                    name: rows.name,
+                    email: rows.email,
+                    age: rows.age,
+                    contact: rows.contact,
+                    gender: rows.gender,
+                    birthdate: rows.birthdate,
+                    city: rows.city,
+                    skills: [{
+                        id: rows.skill_id,
+                        name: rows.skill_name
+                    }]
+                })
+            }
+        })
+
+        res.json(temp);
     } catch (error) {
-        console.log(error);
-        res.status(500).send('Internal server error');
+        console.error(error);
+        res.status(500).json({ error: 'Internal Server Error' });
     }
 }
 
@@ -44,34 +72,31 @@ const userWithSkill = async (req, res) => {
 const createPerson = async (req, res) => {
     try {
         const { name, email, age, contact, gender, birthdate, city, skillIds } = req.body;
-        const queryParams = [];
 
         const userResult = await pool.query(
             'INSERT INTO users(name, email, age, contact, gender, birthdate, city) VALUES($1, LOWER($2), $3, $4, $5, $6,$7) RETURNING user_id', [name, email, age, contact, gender, birthdate, city]);
 
         const userId = userResult.rows[0].user_id;
 
-        let query = `INSERT INTO userSkills(user_id,skill_id) VALUES`;
+        const queryParams = skillIds.map((id) => {
+            return `(${userId}, ${id})`;
+        });
 
-        skillIds.forEach((id) => {
-            queryParams.push(`(${userId}, ${id})`);
-        })
-
-        query = `${query} ${queryParams.join(', ')}`;
+        const query = `INSERT INTO userSkills(user_id,skill_id) VALUES ${queryParams.join(', ')}`;
 
         await pool.query(query);
 
-        res.status(201).json("User Added");
+        res.status(200).json({ msg: 'User Added' });
     }
     catch (error) {
-        console.log(error);
-        res.status(500).send('Internal server error');
+        console.error(error);
+        res.status(500).json({ error: 'Internal Server Error' });
     }
 };
 
 // //!Sort Data || Get list of users from the JSON file with the ability to sort users by their name, email and age 
 
-const sortUser = async (req, res) => {
+const sortUsers = async (req, res) => {
     try {
         const sortField = req.query.sortField;
         const sortOrder = req.query.sortOrder;
@@ -80,16 +105,16 @@ const sortUser = async (req, res) => {
         ARRAY(SELECT S.skill_name FROM userSkills US JOIN skills S ON US.skill_id = S.skill_id WHERE US.user_id = U.user_id) AS skills FROM users U ORDER BY ${sortField} ${sortOrder}`;
 
         const result = await pool.query(query);
-        
+
         if (result.rows.length == 0) {
-            res.status(404).json({ error: 'Data is Not available' });
+            res.status(404).json({ error: 'User not found' });
             return;
         }
         res.json(result.rows);
     }
-    catch (err) {
-        console.error(err);
-        res.status(500).send('Internal server error');
+    catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Internal Server Error' });
     }
 };
 
@@ -103,14 +128,13 @@ const searchUserByNameAndemail = async (req, res) => {
 
         const result = await pool.query(query);
         if (result.rows.length == 0) {
-            res.status(404).json({ error: 'This type of data is not available' });
+            res.status(404).json({ error: 'User not found for this Name Or Email' });
             return;
         }
         res.json(result.rows);
-    }
-    catch (error) {
+    } catch (error) {
         console.error(error);
-        res.status(500).send('Internal server error');
+        res.status(500).json({ error: 'Internal Server Error' });
     }
 };
 
@@ -119,7 +143,7 @@ const searchUserByNameAndemail = async (req, res) => {
 const birthdayUsers = async (req, res) => {
     try {
 
-        let query = `SELECT U.name, U.email, U.age, U.contact, U.gender, U.birthdate, U.city, ARRAY(SELECT S.skill_name FROM userSkills US JOIN skills S ON US.skill_id = S.skill_id WHERE US.user_id = U.user_id) AS skills FROM users U WHERE EXTRACT(month from birthdate) BETWEEN EXTRACT(month from now()) AND EXTRACT(month from now() + interval '7 days') AND EXTRACT(day from birthdate) BETWEEN EXTRACT(day from now() + interval '1 days') AND EXTRACT(day from now() + interval '7 days');`;
+        let query = `SELECT U.user_id, U.name, U.email, U.age, U.contact, U.gender, U.birthdate, U.city FROM users U WHERE EXTRACT(month from birthdate) BETWEEN EXTRACT(month from now()) AND EXTRACT(month from now() + interval '7 days') AND EXTRACT(day from birthdate) BETWEEN EXTRACT(day from now() + interval '1 days') AND EXTRACT(day from now() + interval '7 days')`;
 
         const result = await pool.query(query);
 
@@ -132,7 +156,7 @@ const birthdayUsers = async (req, res) => {
 
     } catch (error) {
         console.error(error);
-        res.status(500).send('Internal server error');
+        res.status(500).json({ error: 'Internal Server Error' });
     }
 };
 
@@ -142,19 +166,18 @@ const birthdayUsers = async (req, res) => {
 const updateUserById = async (req, res) => {
     try {
         const id = req.params.id;
-        let query = `UPDATE users SET`;
 
         let keys = Object.keys(req.body);
-        const queryParams = [];
 
-        keys.forEach((key) => {
-            queryParams.push(`${key} = '${req.body[key]}'`)
+        const queryParams = keys.map((key) => {
+            return `${key} = '${req.body[key]}'`;
         });
-       
-        query = `${query} ${queryParams.join(', ')} WHERE user_id = ${id}`;
-    
+
+        const query = `UPDATE users SET ${queryParams.join(', ')} WHERE user_id = ${id}`;
+
         await pool.query(query);
-        res.json("Data successfully updated");
+        res.status(200).json({ msg: 'Data successfully updated' });
+
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Internal Server Error' });
@@ -163,20 +186,19 @@ const updateUserById = async (req, res) => {
 
 
 //! Get users by matching skills 
-const getUserByMatchSkill = async (req, res) => {
+const getUsersByMatchSkills = async (req, res) => {
     try {
         const skillsArray = req.query.skills.split(',');
-        const query = `SELECT U.name, U.email, U.age, U.contact, U.gender, U.birthdate, U.city, 
-                       ARRAY(SELECT S.skill_name FROM skills S JOIN userSkills US ON S.skill_id = US.skill_id 
-                       WHERE US.user_id = U.user_id) AS skills FROM users U 
-                       WHERE EXISTS(SELECT 1 FROM userSkills US JOIN skills S ON US.skill_id = S.skill_id WHERE US.user_id = U.user_id AND S.skill_name = ANY($1)); `;
 
-        // const query = `SELECT U.name, U.email, U.age, U.contact, U.gender, U.birthdate, U.city, ARRAY_AGG(S.skill_name) AS skills FROM users U JOIN userSkills US ON U.user_id = US.user_id JOIN skills S ON US.skill_id = S.skill_id WHERE S.skill_name = ANY($1) GROUP BY U.user_id,U.name, U.email, U.age, U.contact, U.gender, U.birthdate, U.city `;
+        // const query = `SELECT U.user_id, U.name, U.email, U.age, U.contact, U.gender, U.birthdate, U.city,
+        //                FROM users U WHERE EXISTS(SELECT 1 FROM userSkills US JOIN skills S ON US.skill_id = S.skill_id WHERE US.user_id = U.user_id AND S.skill_name = ANY($1)) `;
 
-        const result = await pool.query(query, [skillsArray]);
+        const query = `SELECT U.name, U.email, U.age, U.contact, U.gender, U.birthdate, U.city FROM users U JOIN userSkills US ON U.user_id = US.user_id JOIN skills S ON US.skill_id = S.skill_id WHERE S.skill_name = ANY($1) GROUP BY U.user_id,U.name, U.email, U.age, U.contact, U.gender, U.birthdate, U.city `;
+
+        const result = await pool.query(query,[skillsArray]);
 
         if (result.rows.length == 0) {
-            res.status(404).json({ error: 'Skills Not Found' });
+            res.status(404).json({ error: 'User not found' });
             return;
         }
         res.json(result.rows);
@@ -189,11 +211,10 @@ const getUserByMatchSkill = async (req, res) => {
 
 
 //! API to add skill(s) for particular user 
-const addSkillInUserById = async (req, res) => {
+const addSkillsInUserById = async (req, res) => {
     try {
         const userId = req.params.id;
         const newSkillIds = req.body.skillIds;
-        const queryParams = [];
 
         const existenceIds = await pool.query(`SELECT user_id,skill_id FROM userSkills WHERE skill_id = ANY($1) AND user_id = $2`, [newSkillIds, userId]);
 
@@ -205,17 +226,15 @@ const addSkillInUserById = async (req, res) => {
             return;
         }
 
-        let query = `INSERT INTO userSkills(user_id,skill_id) VALUES`;
-
-        newSkillIds.forEach((skillId) => {
-            queryParams.push(`(${userId}, ${skillId})`);
+        const queryParams = newSkillIds.map((skillId) => {
+            return `(${userId}, ${skillId})`;
         });
 
-        query = `${query} ${queryParams.join(', ')}`;
+        const query = `INSERT INTO userSkills(user_id,skill_id) VALUES ${queryParams.join(', ')}`;
 
         await pool.query(query);
 
-        res.json("New Skills added");
+        res.status(200).json({ msg: 'New Skills added' });
     }
     catch (error) {
         if (error.code == 23503) {
@@ -229,7 +248,7 @@ const addSkillInUserById = async (req, res) => {
 
 
 //! API to remove skill(s) for particular user 
-const removeSkillInUserById = async (req, res) => {
+const removeSkillsInUserById = async (req, res) => {
     try {
         const userId = req.params.id;
         const removeSkillsID = req.body.skillIds;
@@ -246,11 +265,11 @@ const removeSkillInUserById = async (req, res) => {
 
         await pool.query(`DELETE FROM userSkills WHERE skill_id = ANY($1) AND user_id = $2`, [removeSkillsID, userId]);
 
-        res.json("User Delete from Database");
+        res.json({ msg: 'User Delete from Database' });
 
     } catch (error) {
-        console.log(error);
-        res.status(500).send('Internal server error');
+        console.error(error);
+        res.status(500).json({ error: 'Internal Server Error' });
     }
 }
 
@@ -258,15 +277,53 @@ module.exports = {
     createPerson,
     getUsers,
     getSkills,
-    userWithSkill,
-    sortUser,
+    userWithSkills,
+    sortUsers,
     searchUserByNameAndemail,
     birthdayUsers,
     updateUserById,
-    getUserByMatchSkill,
-    addSkillInUserById,
-    removeSkillInUserById
+    getUsersByMatchSkills,
+    addSkillsInUserById,
+    removeSkillsInUserById
 };
 
 
 
+
+
+
+// const userWithSkills = async (req, res) => {
+//     try {
+//         const result = await pool.query('SELECT U.user_id, U.name, U.email, U.age, U.contact, U.gender, U.birthdate, U.city, S.skill_id, S.skill_name FROM users U JOIN userSkills US ON U.user_id = US.user_id  JOIN skills S ON US.skill_id = S.skill_id order by U.user_id');
+
+//         const temp = [];
+
+//         result.rows.forEach((rows) => {
+
+//             const userExistance = temp.find(user => user.id == rows.user_id)
+
+//             if (userExistance) {
+//                 userExistance.skills.push({
+//                     id: rows.skill_id,
+//                     name: rows.skill_name
+//                 })
+//             } else {
+//                 const xyz = {
+//                     ...rows
+//                 }
+//                 delete xyz.skill_id
+//                 delete xyz.skill_name
+//                 xyz.skills = [{
+//                     id: rows.skill_id,
+//                     name: rows.skill_name
+//                 }]
+//                 temp.push(xyz)
+//             }
+//         })
+
+//         res.json(temp);
+//     } catch (error) {
+//         console.error(error);
+//         res.status(500).json({ error: 'Internal Server Error' });
+//     }
+// }
