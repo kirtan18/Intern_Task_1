@@ -6,14 +6,14 @@ const pool = new Pool({
     database: 'person',
     password: '12345',
     port: 5432
-});
+});  
 
 const getUsers = async (req, res) => {
     try {
         const result = await pool.query("SELECT user_id, name, email, age, contact, gender, birthdate, city FROM users ORDER BY user_id ASC");
-        res.json(result.rows);
+        res.status(200).json(result.rows);
     } catch (error) {
-        console.error(error);
+        console.log(error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 };
@@ -21,23 +21,21 @@ const getUsers = async (req, res) => {
 const getSkills = async (req, res) => {
     try {
         const result = await pool.query("SELECT skill_id, skill_name FROM skills ORDER BY skill_id ASC");
-        res.json(result.rows);
+        res.status(200).json(result.rows);
     } catch (error) {
-        console.error(error);
+        console.log(error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 }
 
 const userWithSkills = async (req, res) => {
     try {
-        const result = await pool.query('SELECT U.user_id, U.name, U.email, U.age, U.contact, U.gender, U.birthdate, U.city, S.skill_id, S.skill_name FROM users U JOIN userSkills US ON U.user_id = US.user_id  JOIN skills S ON US.skill_id = S.skill_id order by U.user_id');
-
+        const result = await pool.query(`SELECT U.user_id, U.name, U.email, U.age, U.contact, U.gender, U.birthdate, U.city, S.skill_id, S.skill_name FROM users U JOIN userSkills US ON U.user_id = US.user_id  JOIN skills S ON US.skill_id = S.skill_id order by U.user_id`);
+       
         const temp = [];
 
         result.rows.forEach((rows) => {
-
-            const userExistance = temp.find(user => user.user_id == rows.user_id)
-
+            const userExistance = temp.find(user => user.id == rows.user_id)
             if (userExistance) {
                 userExistance.skills.push({
                     id: rows.skill_id,
@@ -57,13 +55,12 @@ const userWithSkills = async (req, res) => {
                         id: rows.skill_id,
                         name: rows.skill_name
                     }]
-                })
+                });
             }
         })
-
-        res.json(temp);
+        res.status(200).json(temp);
     } catch (error) {
-        console.error(error);
+        console.log(error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 }
@@ -75,7 +72,6 @@ const createPerson = async (req, res) => {
 
         const userResult = await pool.query(
             'INSERT INTO users(name, email, age, contact, gender, birthdate, city) VALUES($1, LOWER($2), $3, $4, $5, $6,$7) RETURNING user_id', [name, email, age, contact, gender, birthdate, city]);
-
         const userId = userResult.rows[0].user_id;
 
         const queryParams = skillIds.map((id) => {
@@ -89,7 +85,7 @@ const createPerson = async (req, res) => {
         res.status(200).json({ msg: 'User Added' });
     }
     catch (error) {
-        console.error(error);
+        console.log(error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 };
@@ -101,19 +97,18 @@ const sortUsers = async (req, res) => {
         const sortField = req.query.sortField;
         const sortOrder = req.query.sortOrder;
 
-        const query = `SELECT U.name, U.email, U.age, U.contact, U.gender, U.birthdate, U.city, 
-        ARRAY(SELECT S.skill_name FROM userSkills US JOIN skills S ON US.skill_id = S.skill_id WHERE US.user_id = U.user_id) AS skills FROM users U ORDER BY ${sortField} ${sortOrder}`;
+        const query = `SELECT U.name, U.email, U.age, U.contact, U.gender, U.birthdate, U.city FROM users U ORDER BY ${sortField} ${sortOrder}`;
 
         const result = await pool.query(query);
 
-        if (result.rows.length == 0) {
+        if (result.rowCount == 0) {
             res.status(404).json({ error: 'User not found' });
             return;
         }
         res.json(result.rows);
     }
     catch (error) {
-        console.error(error);
+        console.log(error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 };
@@ -127,13 +122,13 @@ const searchUserByNameAndemail = async (req, res) => {
         let query = `SELECT name, email, age, contact, gender, birthdate, city FROM users WHERE name ILIKE '${name}' OR email ILIKE '${email}'`;
 
         const result = await pool.query(query);
-        if (result.rows.length == 0) {
+        if (result.rowCount == 0) {
             res.status(404).json({ error: 'User not found for this Name Or Email' });
             return;
         }
         res.json(result.rows);
     } catch (error) {
-        console.error(error);
+        console.log(error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 };
@@ -147,7 +142,7 @@ const birthdayUsers = async (req, res) => {
 
         const result = await pool.query(query);
 
-        if (result.rows.length == 0) {
+        if (result.rowCount == 0) {
             res.status(404).json({ error: 'No one have birthday in next comming seven days' });
             return;
         }
@@ -155,11 +150,10 @@ const birthdayUsers = async (req, res) => {
         res.json(result.rows);
 
     } catch (error) {
-        console.error(error);
+        console.log(error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 };
-
 
 // //! Update User data by ID || API to Update user by id that should update user details in the JSON file 
 
@@ -174,16 +168,20 @@ const updateUserById = async (req, res) => {
         });
 
         const query = `UPDATE users SET ${queryParams.join(', ')} WHERE user_id = ${id}`;
+        
+        const result = await pool.query(query);
 
-        await pool.query(query);
+        if(result.rowCount == 0){
+            res.status(404).json({error : 'User not found'});
+            return;
+        }
         res.status(200).json({ msg: 'Data successfully updated' });
 
     } catch (error) {
-        console.error(error);
+        console.log(error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 };
-
 
 //! Get users by matching skills 
 const getUsersByMatchSkills = async (req, res) => {
@@ -197,14 +195,14 @@ const getUsersByMatchSkills = async (req, res) => {
 
         const result = await pool.query(query,[skillsArray]);
 
-        if (result.rows.length == 0) {
+        if (result.rowCount == 0) {
             res.status(404).json({ error: 'User not found' });
             return;
         }
         res.json(result.rows);
 
     } catch (error) {
-        console.error(error);
+        console.log(error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 };
@@ -234,7 +232,7 @@ const addSkillsInUserById = async (req, res) => {
 
         await pool.query(query);
 
-        res.status(200).json({ msg: 'New Skills added' });
+        res.status(200).json({ msg: 'New Skills added in user' });
     }
     catch (error) {
         if (error.code == 23503) {
@@ -245,7 +243,6 @@ const addSkillsInUserById = async (req, res) => {
         res.status(500).json({ error: 'Internal Server Error' });
     }
 };
-
 
 //! API to remove skill(s) for particular user 
 const removeSkillsInUserById = async (req, res) => {
@@ -265,10 +262,10 @@ const removeSkillsInUserById = async (req, res) => {
 
         await pool.query(`DELETE FROM userSkills WHERE skill_id = ANY($1) AND user_id = $2`, [removeSkillsID, userId]);
 
-        res.json({ msg: 'User Delete from Database' });
+        res.status(200).json({ msg: 'SkillIds Delete from user' });
 
     } catch (error) {
-        console.error(error);
+        console.log(error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 }
@@ -287,43 +284,3 @@ module.exports = {
     removeSkillsInUserById
 };
 
-
-
-
-
-
-// const userWithSkills = async (req, res) => {
-//     try {
-//         const result = await pool.query('SELECT U.user_id, U.name, U.email, U.age, U.contact, U.gender, U.birthdate, U.city, S.skill_id, S.skill_name FROM users U JOIN userSkills US ON U.user_id = US.user_id  JOIN skills S ON US.skill_id = S.skill_id order by U.user_id');
-
-//         const temp = [];
-
-//         result.rows.forEach((rows) => {
-
-//             const userExistance = temp.find(user => user.id == rows.user_id)
-
-//             if (userExistance) {
-//                 userExistance.skills.push({
-//                     id: rows.skill_id,
-//                     name: rows.skill_name
-//                 })
-//             } else {
-//                 const xyz = {
-//                     ...rows
-//                 }
-//                 delete xyz.skill_id
-//                 delete xyz.skill_name
-//                 xyz.skills = [{
-//                     id: rows.skill_id,
-//                     name: rows.skill_name
-//                 }]
-//                 temp.push(xyz)
-//             }
-//         })
-
-//         res.json(temp);
-//     } catch (error) {
-//         console.error(error);
-//         res.status(500).json({ error: 'Internal Server Error' });
-//     }
-// }

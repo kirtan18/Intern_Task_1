@@ -10,7 +10,8 @@ app.use(morgan('dev'));
 app.use(bodyParser.urlencoded({extended: true}));
 app.use(bodyParser.json());
 
-app.listen(PORT, () => {
+
+module.exports = app.listen(PORT, () => {
     console.log(`Connection is setup at ${PORT}`);
 });
 
