@@ -1,233 +1,167 @@
-const allUser = require('../data.json');
-const fs = require("fs");
-const jwt = require("jsonwebtoken");
+const usersService = require('../services/usersService');
+const usersWithSkillsService = require('../services/usersWithSkillsService');
 
-//! Create Token for authentication
-const createToken = (req,res) => {
-    jwt.sign({ msg: "Grant Access." }, "secretkey", (err, token) => {
-        res.status(200).json({
-          msg: "Welcome... !!",
-          token
-        });
+const getUsers = async (req, res, next) => {
+  try {
+    const result = await usersService.getUsers();
+    res.status(200).json(result.rows);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const usersWithSkills = async (req, res, next) => {
+  try {
+    const result = await usersService.getUsersWithSkills();
+
+    const temp = [];
+
+    result.rows.forEach((rows) => {
+      const userExistance = temp.find((user) => user.id === rows.user_id);
+      if (userExistance) userExistance.skills.push({
+        id: rows.skill_id,
+        name: rows.skill_name,
       });
+      else temp.push({
+        id: rows.user_id,
+        name: rows.name,
+        email: rows.email,
+        age: rows.age,
+        contact: rows.contact,
+        gender: rows.gender,
+        birthdate: rows.birthdate,
+        city: rows.city,
+        skills: [ {
+          id: rows.skill_id,
+          name: rows.skill_name,
+        } ],
+      });
+    });
+    res.status(200).json(temp);
+  } catch (error) {
+    next(error);
+  }
 };
 
-
-//! Post API || Create user API that should add new user object in the JSON file 
-const createPerson =(req , res) => {
-    try {
-        const id = allUser.length + 1;
-        req.body.id = id;
-        const lowerName = req.body.name.toLowerCase()
-        const lowerEmail = req.body.email.toLowerCase();
-        const found = allUser.find(user => user.email == lowerEmail);
-
-        if (found) {
-            res.status(404).send("Email already used");
-        }
-        req.body.name = lowerName;
-        req.body.email = lowerEmail;
-        allUser.push(req.body);
-        var strNotes = JSON.stringify(allUser);
-        fs.writeFile('data.json', strNotes, (err) => {
-            if (err) return console.log(err);
-            console.log('Note added');
-        });
-        res.send(req.body);
-    } catch (error) {
-        console.error(err);
-    }
+//! Post API || Create user API that should add new user object in the JSON file
+const createUser = async (req, res, next) => {
+  try {
+    await usersService.createUserService(req.body);
+    res.status(200).json({ msg: 'User Added' });
+  } catch (error) {
+    next(error);
+  }
 };
 
+// //!Sort Data || Get list of users from the JSON file with the ability to sort users by their name, email and age
+const sortUsers = async (req, res, next) => {
+  try {
+    const result = await usersService.getSortUsers(req.query);
 
-//!Sort Data || Get list of users from the JSON file with the ability to sort users by their name, email and age 
-function sortByProperty(property) {
-    return function (a, b) {
-        if (a[property].toLowerCase() > b[property].toLowerCase())
-            return 1;
-        else if (a[property].toLowerCase() < b[property].toLowerCase())
-            return -1;
-        return 0;
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: 'User not found' });
+      return;
     }
+    res.json(result.rows);
+  } catch (error) {
+    next(error);
+  }
 };
 
+//! Search API || Search user(s) by name and email
+const searchUserByNameAndEmail = async (req, res, next) => {
+  try {
+    const result = await usersService.getUserByNameAndEmail(req.query);
 
-function sortByPropertyforAge(property) {
-    return function (a, b) {
-        if (a[property] > b[property])
-            return 1;
-        else if (a[property] < b[property])
-            return -1;
-        return 0;
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: 'User not found for this Name Or Email' });
+      return;
     }
+    res.json(result.rows);
+  } catch (error) {
+    next(error);
+  }
 };
 
-const sortUser = (req,res) =>{
-    try {
-        let queryType = req.query.sortString;
-        if (!queryType) {
-            const allData = JSON.stringify(allUser);
-            res.send(allData);
-        }
-        let sortedData;
-        if (queryType == "name" || queryType == "email") {
-            sortedData = allUser.sort(sortByProperty(queryType));
-        }
-        sortedData = allUser.sort(sortByPropertyforAge(queryType));
-        res.send(sortedData);
+//! Get users whose birthday is coming in next seven days' excluding today
+const birthdayUsers = async (req, res, next) => {
+  try {
+    const result = await usersService.getBirthdayUsers();
+
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: 'No one have birthday in next comming seven days' });
+      return;
     }
-    catch (err) {
-        console.error(err);
-    }
+
+    res.json(result.rows);
+  } catch (error) {
+    next(error);
+  }
 };
 
-//! Search API || Search user(s) by name and email 
-const searchUserByNameAndemail = (req,res) => {
-    try {
-        const searchName = req.query.name.toLowerCase();
-        const searchEmail = req.query.email.toLowerCase();
+// //! Update User data by ID || API to Update user by id that should update user details in the JSON file
+const updateUserById = async (req, res, next) => {
+  try {
+    const result = await usersService.updateUserById(req.params, req.body);
 
-        const allData =  allUser.filter((user) => {
-            return (user.name.includes(searchName) && user.email.includes(searchEmail));
-        });
-        res.send(allData);
-    } catch (error) {
-        console.error(err);
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: 'User not found' });
+      return;
     }
+    res.status(200).json({ msg: 'Data successfully updated' });
+  } catch (error) {
+    next(error);
+  }
 };
 
+//! Get users by matching skills
+const getUsersByMatchSkills = async (req, res, next) => {
+  try {
+    const result = await usersService.UsersByMatchSkills(req.query);
 
-//! Get users whose birthday is coming in next seven days' excluding today 
-const birthdayUsers = (req,res) => {
-    try {
-        const birthData = [];
-        const current = new Date();
-        let nextSeventhDate = new Date();
-        nextSeventhDate.setDate(nextSeventhDate.getDate() + 7);
-        allUser.forEach((user) => {
-            const birthDate = new Date(user.birthdate);
-            if (birthDate > current && birthDate <= nextSeventhDate) {
-                birthData.push(user);
-            }
-        });
-        if(birthData.length == 0){
-            res.status(404).send("No one have birthday in next coming seven days");
-        }
-        res.send(birthData);
-    } catch (error) {
-        console.error(err);
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: 'User not found' });
+      return;
     }
+    res.json(result.rows);
+  } catch (error) {
+    next(error);
+  }
 };
 
-
-//! Update User data by ID || API to Update user by id that should update user details in the JSON file 
-
-const updateUserById = (req,res) => {
-    try {
-        const paramID = req.params.id;
-        const found = allUser.find(u => u.id === parseInt(paramID));
-        if (!found) {
-            res.status(404).send("ID is not found");
-        }
-        for (let key in req.body) {
-            found[key] = req.body[key];
-        }
-
-        const updatedData = JSON.stringify(allUser);
-
-        fs.writeFile('data.json', updatedData, (err) => {
-            if (err) console.log(err);
-            res.send(found);
-        });
-    } catch (error) {
-        console.error(err);
+//! API to add skill(s) for particular user
+const addSkillsInUserById = async (req, res, next) => {
+  try {
+    await usersWithSkillsService.getExistenceUserForAddSkills(req.params, req.body, res);
+    res.status(200).json({ msg: 'New Skills added in user' });
+  } catch (error) {
+    if (error.code === 23503) {
+      res.status(404).json({ error: 'Please write correct Id' });
+      return;
     }
+    next(error);
+  }
 };
 
-
-//! Get users by matching skills 
-const getUserByMatchSkill = (req,res) => {
-    try {
-        const arr =  req.query.matchSkill.split(',');
-        console.log(arr);
-       
-        const  matchingData = [];
-        allUser.forEach((user) =>{
-            arr.forEach((a) =>{
-                const index = user.skills.indexOf(a);
-                if(index != -1){
-                    matchingData.push(user);
-                }
-            })
-        });
-        res.send(matchingData);
-    } catch (error) {
-        console.error(err);
-    }
+//! API to remove skill(s) for particular user
+const removeSkillsInUserById = async (req, res, next) => {
+  try {
+    await usersWithSkillsService.getExistenceUserForRemoveSkills(req.params, req.body, res);
+    res.status(200).json({ msg: 'SkillIds Delete from user' });
+  } catch (error) {
+    next(error);
+  }
 };
-
-
-//! API to add skill(s) for particular user 
-const addSkillInUserById = (req,res) => {
-    try {
-        const found = allUser.find(u => u.id === parseInt(req.params.id));
-        if (!found) {
-            res.status(404).send("User Not Found");
-        }
-        req.body.skills.forEach((skill) => {
-            const findSkill = found.skills.find(fn => fn === skill);
-            if (!findSkill) {
-                found.skills.push(skill);
-            }
-        });
-        const updatedData = JSON.stringify(allUser);
-        fs.writeFile('data.json', updatedData, (err) => {
-            if (err) console.log(err);
-            console.log("Skills Added");
-            res.send(found);
-        });
-    }
-    catch {
-        console.error(err);
-    }
-};
-
-
-//! API to remove skill(s) for particular user 
-const removeSkillInUserById = (req,res) => {
-    try {
-        const found = allUser.find(u => u.id === parseInt(req.params.id));
-        if (!found) {
-            res.status(404).send("User Not Found");
-        }
-
-        req.body.skills.forEach((skill) =>{
-            const index = found.skills.indexOf(skill);
-            if(index != -1){
-                found.skills.splice(index,1);
-            }
-            res.status(400).send("skill was already not available"); 
-        })
-
-        const updatedData = JSON.stringify(allUser);
-        fs.writeFile('data.json', updatedData, (err) => {
-            if (err) console.log(err);
-            res.send(found);
-        });
-
-    } catch (error) {
-        console.error(err);
-    }
-}
 
 module.exports = {
-    createPerson,
-    sortUser,
-    searchUserByNameAndemail,
-    birthdayUsers,
-    updateUserById,
-    getUserByMatchSkill,
-    addSkillInUserById,
-    removeSkillInUserById,
-    createToken
+  getUsers,
+  usersWithSkills,
+  createUser,
+  sortUsers,
+  searchUserByNameAndEmail,
+  birthdayUsers,
+  updateUserById,
+  getUsersByMatchSkills,
+  addSkillsInUserById,
+  removeSkillsInUserById,
 };
